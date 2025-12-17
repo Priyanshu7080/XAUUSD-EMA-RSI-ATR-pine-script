@@ -1,2 +1,5 @@
 # XAUUSD-EMA-RSI-ATR-pine-script
-ATR based risk reward.              Backtested on Trading view and MT5
+## Backtest Results (TradingView)
+
+### Strategy Overview
+![Backtest Overview](screenshots/backtest_overview.png)
