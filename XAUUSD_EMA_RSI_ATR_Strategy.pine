@@ -1,0 +1,107 @@
+//@version=5
+strategy("XAUUSD EMA–RSI–ATR Strategy ($100 Risk, Long & Short)",
+     overlay = true,
+     initial_capital = 50000,
+     pyramiding = 0,
+     process_orders_on_close = true)
+
+//========================
+// INPUTS
+//========================
+emaFastLen    = input.int(50,  "Fast EMA")
+emaSlowLen    = input.int(200, "Slow EMA")
+rsiLen        = input.int(14,  "RSI Length")
+rsiMid        = input.float(50.0, "RSI Mid Level")
+atrLen        = input.int(14,  "ATR Length")
+swingLookback = input.int(10,  "Swing High/Low Lookback")
+
+slATRmult = input.float(1.5, "SL = ATR ×", step = 0.1)
+tpATRmult = input.float(3.0, "TP = ATR ×", step = 0.1)
+
+useSession = input.bool(false, "Use Session Filter?")
+sessionStr = input.session("0800-1800", "Session")
+
+//========================
+// RISK SETTINGS (FIXED $100)
+//========================
+riskPerTrade = input.float(100.0, "Risk per Trade ($)", minval = 1.0)
+// If 1 lot = 100 oz, set this to 100
+pointValue   = input.float(1.0, "Dollar per 1 price unit per 1 qty", minval = 0.0001)
+
+//========================
+// CALCULATIONS
+//========================
+emaFast = ta.ema(close, emaFastLen)
+emaSlow = ta.ema(close, emaSlowLen)
+rsi     = ta.rsi(close, rsiLen)
+atr     = ta.atr(atrLen)
+
+// Trend filters
+upTrend   = close > emaSlow and emaFast > emaSlow
+downTrend = close < emaSlow and emaFast < emaSlow
+
+// Swing levels
+swingHigh     = ta.highest(high, swingLookback)
+swingLow      = ta.lowest(low,  swingLookback)
+longBreakout  = close > swingHigh[1]
+shortBreakout = close < swingLow[1]
+
+// RSI filters
+rsiLongOk  = rsi > rsiMid and ta.rising(rsi, 3)
+rsiShortOk = rsi < rsiMid and ta.falling(rsi, 3)
+
+// Session filter
+inSession = not useSession or not na(time(timeframe.period, sessionStr))
+
+// Entry conditions
+longCondition  = inSession and upTrend   and rsiLongOk  and longBreakout
+shortCondition = inSession and downTrend and rsiShortOk and shortBreakout
+
+//========================
+// POSITION SIZE FROM $100 RISK
+//========================
+// Stop distance in price (same logic for long & short)
+stopDistance  = atr * slATRmult
+// Dollar loss per 1 unit of qty if SL hits
+dollarPerUnit = stopDistance * pointValue
+// Qty = fixed risk / loss per unit
+qty = dollarPerUnit > 0 ? (riskPerTrade / dollarPerUnit) : 0.0
+
+//========================
+// ENTRY (Long & Short, Risk Based)
+//========================
+if longCondition and strategy.position_size <= 0 and qty > 0
+    strategy.entry("Long", strategy.long, qty = qty)
+
+if shortCondition and strategy.position_size >= 0 and qty > 0
+    strategy.entry("Short", strategy.short, qty = qty)
+
+//========================
+// STOP LOSS & TAKE PROFIT
+//========================
+if strategy.position_size > 0
+    entryPrice = strategy.position_avg_price
+    sl = entryPrice - atr * slATRmult
+    tp = entryPrice + atr * tpATRmult
+    strategy.exit("Long Exit", "Long", stop = sl, limit = tp)
+
+if strategy.position_size < 0
+    entryPrice = strategy.position_avg_price
+    sl = entryPrice + atr * slATRmult
+    tp = entryPrice - atr * tpATRmult
+    strategy.exit("Short Exit", "Short", stop = sl, limit = tp)
+
+//========================
+// PLOTTING
+//========================
+plot(emaFast, "EMA Fast", linewidth = 1)
+plot(emaSlow, "EMA Slow (Trend)", linewidth = 2)
+plot(swingHigh, "Swing High", style = plot.style_linebr)
+plot(swingLow,  "Swing Low",  style = plot.style_linebr)
+
+plotshape(longCondition,  title="BUY",  style=shape.triangleup,   location=location.belowbar, size=size.small, text="BUY")
+plotshape(shortCondition, title="SELL", style=shape.triangledown, location=location.abovebar, size=size.small, text="SELL")
+
+// ALERTS
+alertcondition(longCondition,  "Buy Signal",  "XAUUSD BUY Setup")
+alertcondition(shortCondition, "Sell Signal", "XAUUSD SELL Setup")
